@@ -139,5 +139,28 @@ def check_manifest_flags(apk_obj) -> list[dict]:
             "found": found_bool,
             "severity": flag['severity']
         })
-        
+        def check_min_sdk_version(apk_obj) -> list[dict]:
+    """
+    Checks the minimum SDK version declared in the manifest.
+    """
+    results = []
+    manifest_xml = apk_obj.get_android_manifest_xml()
+    if manifest_xml is None:
+        return results
+
+    # Find the <uses-sdk> element
+    uses_sdk = manifest_xml.find('uses-sdk')
+    min_sdk = "Not Set"
+
+    if uses_sdk is not None:
+        # Use the Android namespace to get the attribute
+        min_sdk = uses_sdk.get('{http://schemas.android.com/apk/res/android}minSdkVersion')
+
+    results.append({
+        "attribute": "minSdkVersion",
+        "value": min_sdk,
+        "severity": "Low"
+    })
     return results
+        
+  
