@@ -1,75 +1,63 @@
-
-import os
+"""
+main.py
+Integration entry point - Mobile Application Security Analyser.
+Run: python main.py [apk_path] [--format json]
+"""
+import json
 import argparse
 import logging
+logging.getLogger("androguard").setLevel(logging.CRITICAL)
 
-# Import your three modules
-import manifestparser
-import secrets_scanner
-# If your third file is named 'Untitled-3.py', we can alias it as 'generator'
-try:
-    import generator
-except ImportError:
-    import importlib
-    generator = importlib.import_module("Untitled-3")
+from manifest_parser import (
+    load_apk, get_permissions, flag_dangerous_permissions,
+    get_exported_components, check_manifest_flags, check_min_sdk_version
+)
+from secrets_scanner import scan_for_secrets, scan_for_weak_crypto, scan_for_cleartext_urls
+from report_generator import generate_report, print_report, generate_html_report
 
-# Set up logging to prevent androguard cluttering terminal text
-logging.basicConfig(level=logging.ERROR)
 
-def run_pipeline(apk_path: str):
-    if not os.path.exists(apk_path):
-        print(f"[-] Error: Target APK file not found at: {apk_path}")
-        return
-
-    print(f"[*] Loading and analyzing APK: {os.path.basename(apk_path)}...")
-    
-    try:
-        # 1. Initialize and load the APK using manifestparser
-        apk_obj = manifestparser.load_apk(apk_path)
-    except Exception as e:
-        print(f"[-] Critical Error parsing APK: {e}")
-        return
-
-    # 2. Extract and Audit Manifest configuration
-    print("[*] Auditing AndroidManifest.xml details...")
-    raw_permissions = manifestparser.get_permissions(apk_obj)
-    permission_findings = manifestparser.flag_dangerous_permissions(raw_permissions)
-    component_findings = manifestparser.get_exported_components(apk_obj)
-    
-    # Extract structural configuration switches
-    raw_flags = manifestparser.check_manifest_flags(apk_obj)
-    
-    # REMAPPING: The report module expects the key name to be 'finding', 
-    # and we only want to report a flag if it was actually discovered ('found': True)
-    flag_findings = []
-    for flag_item in raw_flags:
-        if flag_item.get("found"):
-            flag_findings.append({
-                "finding": f"Dangerous configuration switch enabled: {flag_item['flag']}",
-                "severity": flag_item.get("severity", "High")
-            })
-
-    # 3. Run Source Code Strings Scanning
-    print("[*] Passive source code analysis for credentials...")
-    secret_findings = secrets_scanner.scan_for_secrets(apk_obj)
-
-    # 4. Generate and Render Report Console Layout
-    print("[*] Compiling analysis database to OWASP Top 10 categories...")
-    
-    # Process results into structured report payload
-    report_payload = generator.generate_report(
-        permission_findings=permission_findings,
-        component_findings=component_findings,
-        flag_findings=flag_findings,
-        secret_findings=secret_findings
-    )
-    
-    # Print the aggregated markdown/ASCII tables
-    generator.print_report(report_payload)
-
-if __name__ == "__main__":
+def main():
+    # 1. Set up argparse to handle command-line inputs professionally
     parser = argparse.ArgumentParser(description="Static APK Security Testing Framework")
     parser.add_argument("apk", help="File system path pointing to the target .apk bundle")
+    parser.add_argument("--format", choices=['table', 'json'], default='table', help="Choose the output format")
     args = parser.parse_args()
-    
-    run_pipeline(args.apk)
+
+    apk_path = args.apk
+
+    print(f"\nLoading APK: {apk_path} ...")
+    apk_obj = load_apk(apk_path)
+
+    print("Parsing manifest and permissions...")
+    permission_findings = flag_dangerous_permissions(get_permissions(apk_obj))
+    component_findings = get_exported_components(apk_obj)
+    flag_findings = check_manifest_flags(apk_obj)
+    sdk_findings = check_min_sdk_version(apk_obj)
+
+    print("Scanning code and resources for hardcoded secrets...")
+    secret_findings = scan_for_secrets(apk_obj)
+
+    print("Scanning for weak cryptographic algorithms...")
+    crypto_findings = scan_for_weak_crypto(apk_obj)
+
+    print("Scanning for hardcoded cleartext URLs...")
+    url_findings = scan_for_cleartext_urls(apk_obj)
+
+    # 2. Generate the central report dictionary
+    report = generate_report(
+        permission_findings, component_findings, flag_findings,
+        sdk_findings, secret_findings, crypto_findings, url_findings
+    )
+
+    # 3. Check the format flag and print accordingly
+    if args.format == 'json':
+        print("\n--- JSON OUTPUT ---")
+        print(json.dumps(report, indent=4))
+    else:
+        print_report(report)
+
+    generate_html_report(report)
+
+
+if __name__ == "__main__":
+    main()
