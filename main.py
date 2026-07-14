@@ -8,7 +8,7 @@ import argparse
 import logging
 logging.getLogger("androguard").setLevel(logging.CRITICAL)
 
-from manifest_parser import (
+from manifestparser import (
     load_apk, get_permissions, flag_dangerous_permissions,
     get_exported_components, check_manifest_flags, check_min_sdk_version
 )
